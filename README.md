@@ -1,10 +1,13 @@
 # Company Valuation Model
 
-A discounted cash flow (DCF) valuation tool: give it a stock ticker, and it
-pulls the company's real historical financials, projects free cash flow
+A DCF and comparable companies valuation tool: give it a stock ticker, and
+it pulls the company's real historical financials, projects free cash flow
 forward, values the business, and writes a formatted Excel report — the
 same output an analyst would build by hand in a financial model, generated
-in seconds instead of an afternoon.
+in seconds instead of an afternoon. Optionally pass a set of peer tickers
+and it adds a comps analysis (P/E, EV/EBITDA, EV/Revenue) alongside the
+DCF, so the report shows two independent valuation methods side by side
+instead of a single number.
 
 ![Python](https://img.shields.io/badge/python-3.9%2B-blue)
 
@@ -31,6 +34,12 @@ in seconds instead of an afternoon.
    should show that range rather than hide behind one number.
 7. **Writes it all to a formatted Excel workbook** (Summary, Assumptions,
    FCF Projection, and a colour-scaled Sensitivity grid).
+8. **Optionally runs a comparable companies analysis** — pass `--comps` with
+   a list of peer tickers, and it pulls each peer's trading multiples
+   (P/E, EV/EBITDA, EV/Revenue) from Yahoo Finance, averages them, and
+   applies them to the target's own EBITDA/revenue/EPS to get an implied
+   price under each method. Adds a Comps sheet with the peer table and a
+   football-field chart comparing the DCF, comps, and market price.
 
 ## Running it
 
@@ -58,16 +67,28 @@ python3 main.py KO --risk-free-rate 0.045 --market-risk-premium 0.055
 
 Run `python3 main.py --help` for the full list of overridable assumptions.
 
+### Adding a comps analysis
+
+```bash
+python3 main.py AAPL --comps MSFT,GOOGL,META
+```
+
+This adds a Comps sheet to the Excel report alongside the DCF, so you can
+see where the two methods agree and where they don't — a DCF built on a
+low historical growth rate can imply a much lower price than trading
+multiples do, and that gap is usually more informative than either number
+on its own.
+
 ## Running the tests
 
 ```bash
 python3 -m pytest tests/ -v
 ```
 
-24 tests cover statement parsing (against a hand-built DataFrame shaped
+29 tests cover statement parsing (against a hand-built DataFrame shaped
 like Yahoo Finance's real output, so no network access is needed to run
-the suite), the forecasting math, the DCF and WACC calculations, and the
-sensitivity grid.
+the suite), the forecasting math, the DCF and WACC calculations, the
+sensitivity grid, and the comps multiples/averaging logic.
 
 ## Methodology notes
 
@@ -85,9 +106,16 @@ sensitivity grid.
   premium, and a flat assumed cost of debt — all of which are simplifying
   assumptions real analysts would refine with market data on the
   company's actual bond yields.
-- **This is not investment advice.** It's a demonstration of DCF
-  mechanics and financial modeling automation, not a substitute for
-  professional equity research.
+- **Comps use Yahoo Finance's own precomputed ratios** (`trailingPE`,
+  `enterpriseValue`, `ebitda`, `totalRevenue`) rather than being re-derived
+  from historical statements — a comps analysis only needs today's
+  snapshot, not a multi-year history, so it's fetched independently of
+  the DCF's data. A peer with missing or negative EBITDA (common for
+  early-stage or distressed companies) is dropped from the average rather
+  than distorting it.
+- **This is not investment advice.** It's a demonstration of DCF and
+  comps mechanics and financial modeling automation, not a substitute
+  for professional equity research.
 
 ## Project structure
 
@@ -99,6 +127,7 @@ company-valuation-model/
 │   ├── forecast.py      # Derives assumptions from history, projects FCF
 │   ├── dcf.py            # WACC, discounting, terminal value, valuation
 │   ├── sensitivity.py    # WACC x terminal-growth sensitivity grid
+│   ├── comps.py           # Peer trading multiples + comparable companies analysis
 │   └── report.py         # Excel report generation (openpyxl)
 ├── main.py               # CLI entry point
 ├── tests/
@@ -110,5 +139,4 @@ company-valuation-model/
 - A full three-statement model (income statement, balance sheet, cash
   flow statement all linked) instead of the simplified FCF build
 - Exit-multiple terminal value as an alternative to Gordon growth
-- Comparable company analysis (trading multiples of peer companies)
 - A simple web front end (Streamlit) instead of the CLI

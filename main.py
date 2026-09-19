@@ -17,6 +17,7 @@ from valuation.dcf import run_dcf
 from valuation.sensitivity import sensitivity_table
 from valuation.models import Assumptions
 from valuation.report import build_excel_report
+from valuation.comps import fetch_peer_snapshot, build_comps_table
 
 
 def parse_args():
@@ -43,6 +44,11 @@ def parse_args():
     parser.add_argument("--cost-of-debt", type=float, default=0.05)
     parser.add_argument("--output", default=None,
                          help="Output .xlsx path (default: <TICKER>_valuation.xlsx)")
+    parser.add_argument("--comps", default=None,
+                         help="Comma-separated peer tickers for a comparable "
+                              "companies analysis, e.g. --comps MSFT,GOOGL,META. "
+                              "Adds a Comps sheet with P/E, EV/EBITDA and "
+                              "EV/Revenue multiples and a football-field chart.")
     return parser.parse_args()
 
 
@@ -81,10 +87,25 @@ def main():
         financials, assumptions, result.wacc
     )
 
+    comps_result = None
+    if args.comps:
+        peer_tickers = [t.strip() for t in args.comps.split(",") if t.strip()]
+        try:
+            target_snapshot = fetch_peer_snapshot(args.ticker)
+            peer_snapshots = [fetch_peer_snapshot(t) for t in peer_tickers]
+            comps_result = build_comps_table(
+                target_snapshot, peer_snapshots,
+                financials.shares_outstanding, financials.net_debt,
+            )
+        except Exception as e:
+            print(f"Warning: comps analysis failed ({e}); continuing without it.",
+                  file=sys.stderr)
+
     output_path = args.output or f"{financials.ticker}_valuation.xlsx"
     build_excel_report(
         financials, assumptions, result,
         wacc_values, growth_values, price_grid, output_path,
+        comps_result=comps_result,
     )
 
     upside = result.upside_pct
@@ -96,6 +117,14 @@ def main():
         print(f"  Implied {direction}:      {abs(upside):.1%}")
     print(f"  WACC used:            {result.wacc:.2%}")
     print(f"  Terminal growth:      {assumptions.terminal_growth_rate:.2%}")
+    if comps_result is not None:
+        print("  Comps implied price:")
+        if comps_result.implied_price_ev_ebitda is not None:
+            print(f"    EV/EBITDA:          ${comps_result.implied_price_ev_ebitda:,.2f}")
+        if comps_result.implied_price_ev_revenue is not None:
+            print(f"    EV/Revenue:         ${comps_result.implied_price_ev_revenue:,.2f}")
+        if comps_result.implied_price_pe is not None:
+            print(f"    P/E:                ${comps_result.implied_price_pe:,.2f}")
     print(f"\nFull report written to {output_path}")
 
 
